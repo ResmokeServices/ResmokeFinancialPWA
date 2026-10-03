@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import dynamic from 'next/dynamic';
 import { CashflowKpiCards } from '@/components/CashflowKpiCards';
 import { CashflowTable } from '@/components/CashflowTable';
 import { AdjustIncomeModal } from '@/components/AdjustIncomeModal';
@@ -9,18 +8,7 @@ import { useFinanceStore } from '@/lib/store';
 import { MonthCashflowMetrics } from '@/types/finance';
 import { BarChart3, Table, SlidersHorizontal } from 'lucide-react';
 
-// Dynamic import with ssr: false prevents Webpack runtime 'call' errors with charting libraries
-const CashflowChart = dynamic(() => import('@/components/CashflowChart'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs h-64 sm:h-72 flex items-center justify-center text-slate-400 text-xs">
-      <div className="flex items-center gap-2">
-        <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
-        <span>Loading visual chart...</span>
-      </div>
-    </div>
-  ),
-});
+import { CashflowChart } from '@/components/CashflowChart';
 
 export function FinancialAnalysisSection() {
   const selectedMonth = useFinanceStore((state) => state.selectedMonth);
