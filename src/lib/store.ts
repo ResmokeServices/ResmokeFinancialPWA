@@ -23,6 +23,7 @@ import {
   calculateMonthKpis,
   build12MonthCashflow,
   round2,
+  updateExpenseMonthlyDue,
 } from '@/lib/calculations';
 
 const EXPENSES_STORAGE_KEY = 'resmoke_financial_pwa_expenses';
@@ -275,6 +276,46 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
       }
     }
     return newExpenses.length;
+  },
+
+  updateExpenseDue: async (
+    expenseId: string,
+    monthKey: string,
+    newTotalDue: number,
+    scope: 'this_month' | 'following_months'
+  ) => {
+    const { expenses, userId } = get();
+    const target = expenses.find((e) => e.id === expenseId);
+    if (!target) return;
+
+    const updatedDueConfig = updateExpenseMonthlyDue(
+      target,
+      monthKey,
+      newTotalDue,
+      scope
+    );
+
+    const updated = expenses.map((exp) =>
+      exp.id === expenseId
+        ? {
+            ...exp,
+            monthlyDueConfig: updatedDueConfig,
+            updatedAt: new Date().toISOString(),
+          }
+        : exp
+    );
+
+    set({ expenses: updated });
+    saveExpensesToLocalStorage(updated);
+
+    const updatedTarget = updated.find((e) => e.id === expenseId);
+    if (updatedTarget && hasFirebaseConfig) {
+      try {
+        await saveFirestoreExpense(userId, updatedTarget);
+      } catch (e) {
+        console.error('Firestore update expense due error:', e);
+      }
+    }
   },
 
   // --- Phase 2: Income & Cashflow State Management ---

@@ -4,6 +4,7 @@ import {
   IncomeDocument,
   MonthCashflowMetrics,
   MonthKpiMetrics,
+  MonthlyDueConfig,
   UrgencyStatus,
 } from '@/types/finance';
 
@@ -326,3 +327,69 @@ export function build12MonthCashflow(
     };
   });
 }
+
+/**
+ * Calculates updated MonthlyDueConfig when Total Due is edited for an expense.
+ * Supports:
+ * - 'this_month': Overrides only the active month cycle without altering others.
+ * - 'following_months': Locks prior months to their existing values, and updates
+ *   the active month and all subsequent months forward, plus sets base.
+ */
+export function updateExpenseMonthlyDue(
+  expense: ExpenseDocument,
+  monthKey: string,
+  newTotalDue: number,
+  scope: 'this_month' | 'following_months'
+): MonthlyDueConfig {
+  const cleanDue = round2(Math.max(0, newTotalDue));
+  const accumulated = expense.monthlyDueConfig?.accumulated?.[monthKey] || 0;
+  // Subtract any existing carryover so the resulting totalDue = originalDue + accumulated
+  const newOriginalDue = round2(Math.max(0, cleanDue - accumulated));
+  const oldBase = Number(expense.monthlyDueConfig?.base) || 0;
+  const currentOverrides = { ...(expense.monthlyDueConfig?.overrides || {}) };
+
+  if (monthKey === 'ALL' || scope === 'following_months') {
+    const allMonths = [
+      '2026-01',
+      '2026-02',
+      '2026-03',
+      '2026-04',
+      '2026-05',
+      '2026-06',
+      '2026-07',
+      '2026-08',
+      '2026-09',
+      '2026-10',
+      '2026-11',
+      '2026-12',
+    ];
+
+    allMonths.forEach((m) => {
+      if (m < monthKey) {
+        // Lock prior months so they keep their historical value
+        if (currentOverrides[m] === undefined) {
+          currentOverrides[m] = oldBase;
+        }
+      } else {
+        // Apply to this month and all following months
+        currentOverrides[m] = newOriginalDue;
+      }
+    });
+
+    return {
+      ...expense.monthlyDueConfig,
+      base: newOriginalDue,
+      overrides: currentOverrides,
+    };
+  }
+
+  // 'this_month' only: override only for the selected cycle
+  currentOverrides[monthKey] = newOriginalDue;
+
+  return {
+    ...expense.monthlyDueConfig,
+    base: oldBase,
+    overrides: currentOverrides,
+  };
+}
+

@@ -134,6 +134,12 @@ export interface FinanceAppState {
   toggleSettleExpense: (expenseId: string, monthKey: string) => Promise<void>;
   addExpense: (expense: Omit<ExpenseDocument, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   batchAddExpenses: (expenses: ExpenseDocument[]) => Promise<number>;
+  updateExpenseDue: (
+    expenseId: string,
+    monthKey: string,
+    newTotalDue: number,
+    scope: 'this_month' | 'following_months'
+  ) => Promise<void>;
 
   // Async Sync Engine (Income & Cashflow)
   fetchIncome: (userId: string) => Promise<void>;

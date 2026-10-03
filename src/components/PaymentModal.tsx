@@ -4,7 +4,18 @@ import React, { useState, useEffect } from 'react';
 import { ExpenseDocument, PaymentEntry } from '@/types/finance';
 import { formatCurrency, round2, resolveMonthExpense } from '@/lib/calculations';
 import { useFinanceStore } from '@/lib/store';
-import { X, Plus, Trash2, Calendar, DollarSign, Check, Tag } from 'lucide-react';
+import {
+  X,
+  Plus,
+  Trash2,
+  Calendar,
+  DollarSign,
+  Check,
+  Tag,
+  Pencil,
+  SlidersHorizontal,
+  FastForward,
+} from 'lucide-react';
 
 interface PaymentModalProps {
   expense: ExpenseDocument;
@@ -14,9 +25,19 @@ interface PaymentModalProps {
 export function PaymentModal({ expense, onClose }: PaymentModalProps) {
   const selectedMonth = useFinanceStore((state) => state.selectedMonth);
   const savePaymentRecords = useFinanceStore((state) => state.savePaymentRecords);
+  const updateExpenseDue = useFinanceStore((state) => state.updateExpenseDue);
 
   // Compute baseline total due for this month
   const computed = resolveMonthExpense(expense, selectedMonth);
+
+  // Editable Total Due state
+  const [isEditingDue, setIsEditingDue] = useState(false);
+  const [editableTotalDue, setEditableTotalDue] = useState<string>(
+    computed.totalDue.toString()
+  );
+  const [dueEditScope, setDueEditScope] = useState<
+    'this_month' | 'following_months'
+  >('this_month');
 
   // Filter payments that belong to this selected month cycle
   const initialMonthPayments = (expense.payments || []).filter((p) =>
@@ -50,18 +71,24 @@ export function PaymentModal({ expense, onClose }: PaymentModalProps) {
     };
   }, []);
 
+  // Effective Total Due based on user input
+  const effectiveTotalDue =
+    editableTotalDue === ''
+      ? 0
+      : Math.max(0, round2(parseFloat(editableTotalDue) || 0));
+
   // Real-time inline math calculation: Sum payments on every keystroke!
   const currentTotalSettled = round2(
     payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
   );
 
   const currentBalanceDue =
-    currentTotalSettled >= computed.totalDue && computed.totalDue > 0
+    currentTotalSettled >= effectiveTotalDue && effectiveTotalDue > 0
       ? 0
-      : Math.max(0, round2(computed.totalDue - currentTotalSettled));
+      : Math.max(0, round2(effectiveTotalDue - currentTotalSettled));
 
   const isFullySettled =
-    currentTotalSettled >= computed.totalDue && computed.totalDue > 0;
+    currentTotalSettled >= effectiveTotalDue && effectiveTotalDue > 0;
 
   // Add a new installment line
   const handleAddInstallment = () => {
@@ -98,11 +125,21 @@ export function PaymentModal({ expense, onClose }: PaymentModalProps) {
     );
   };
 
-  // Save payments to Zustand store & Firestore
+  // Save payments and optional Total Due changes to Zustand store & Firestore
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Clean payment objects with numeric amounts
+      // 1. If Total Due was edited, update expense due configuration
+      if (round2(effectiveTotalDue) !== round2(computed.totalDue)) {
+        await updateExpenseDue(
+          expense.id,
+          selectedMonth,
+          effectiveTotalDue,
+          dueEditScope
+        );
+      }
+
+      // 2. Clean payment objects with numeric amounts
       const sanitized = payments
         .filter((p) => Number(p.amount) > 0)
         .map((p) => ({
@@ -113,7 +150,7 @@ export function PaymentModal({ expense, onClose }: PaymentModalProps) {
       await savePaymentRecords(expense.id, selectedMonth, sanitized);
       onClose();
     } catch (e) {
-      console.error('Failed to save payments:', e);
+      console.error('Failed to save payments and due:', e);
     } finally {
       setIsSaving(false);
     }
@@ -162,17 +199,34 @@ export function PaymentModal({ expense, onClose }: PaymentModalProps) {
           </button>
         </div>
 
-        {/* Top Metric Bar (3 mini-stat panels) */}
+        {/* Top Metric Bar (3 mini-stat panels) with Editable Total Due Trigger */}
         <div className="grid grid-cols-3 gap-2 px-5 py-3 bg-slate-50 border-b border-slate-100 text-center">
-          <div className="p-2 bg-white rounded-xl border border-slate-200/70 shadow-2xs">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-              Total Due
-            </span>
+          {/* Card 1: TOTAL DUE (Clickable to Edit) */}
+          <button
+            type="button"
+            onClick={() => setIsEditingDue(!isEditingDue)}
+            className={`p-2 rounded-xl border text-center transition-all ${
+              isEditingDue
+                ? 'bg-violet-50/90 border-violet-400 ring-2 ring-violet-500/20'
+                : 'bg-white border-slate-200/70 hover:border-violet-300 hover:bg-slate-50/80'
+            } shadow-2xs group relative cursor-pointer`}
+            title="Click to edit Total Due amount"
+          >
+            <div className="flex items-center justify-center gap-1 text-slate-400 group-hover:text-violet-600">
+              <span className="text-[10px] font-semibold uppercase tracking-wider block">
+                Total Due
+              </span>
+              <Pencil className="w-2.5 h-2.5 text-slate-400 group-hover:text-violet-600" />
+            </div>
             <span className="text-xs sm:text-sm font-bold text-slate-900 block mt-0.5">
-              {formatCurrency(computed.totalDue)}
+              {formatCurrency(effectiveTotalDue)}
             </span>
-          </div>
+            <span className="text-[9px] text-violet-600 font-medium block mt-0.5">
+              {isEditingDue ? 'Close editor' : 'Tap to edit'}
+            </span>
+          </button>
 
+          {/* Card 2: SETTLED PAID */}
           <div className="p-2 bg-white rounded-xl border border-emerald-200/60 shadow-2xs">
             <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wider block">
               Settled Paid
@@ -182,6 +236,7 @@ export function PaymentModal({ expense, onClose }: PaymentModalProps) {
             </span>
           </div>
 
+          {/* Card 3: REMAINING */}
           <div className="p-2 bg-white rounded-xl border border-rose-200/60 shadow-2xs">
             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
               Remaining
@@ -195,6 +250,78 @@ export function PaymentModal({ expense, onClose }: PaymentModalProps) {
             </span>
           </div>
         </div>
+
+        {/* Interactive Total Due Editor Drawer */}
+        {isEditingDue && (
+          <div className="px-5 py-3.5 bg-violet-50/70 border-b border-violet-200/80 space-y-3 animate-sheet-up">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <SlidersHorizontal className="w-3.5 h-3.5 text-violet-700" />
+                <span className="text-xs font-bold text-violet-900">
+                  Edit Total Due Amount
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Cycle: <strong className="text-slate-800">{selectedMonth}</strong>
+              </span>
+            </div>
+
+            {/* Input with Currency Prefix */}
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                R
+              </span>
+              <input
+                type="number"
+                step="0.01"
+                inputMode="decimal"
+                value={editableTotalDue}
+                onChange={(e) => setEditableTotalDue(e.target.value)}
+                placeholder="0.00"
+                className="w-full pl-8 pr-3 py-2 text-sm sm:text-base font-bold bg-white border border-violet-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500 transition-all"
+              />
+            </div>
+
+            {/* Scope Selection: "Only this month" vs "All following months" */}
+            <div>
+              <label className="text-[11px] font-semibold text-slate-600 block mb-1.5">
+                Apply change to:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDueEditScope('this_month')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all ${
+                    dueEditScope === 'this_month'
+                      ? 'bg-violet-600 border-violet-600 text-white shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Only this month</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDueEditScope('following_months')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all ${
+                    dueEditScope === 'following_months'
+                      ? 'bg-violet-600 border-violet-600 text-white shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <FastForward className="w-3.5 h-3.5" />
+                  <span>All following months</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1.5">
+                {dueEditScope === 'this_month'
+                  ? `Overrides Total Due for ${selectedMonth} only. Other months stay unchanged.`
+                  : `Updates Total Due for ${selectedMonth} and carries forward to all subsequent months.`}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Payment Rows Feed */}
         <div className="p-5 overflow-y-auto space-y-3.5 flex-1 overscroll-contain">
@@ -314,7 +441,13 @@ export function PaymentModal({ expense, onClose }: PaymentModalProps) {
             className="flex-2 py-3 px-4 bg-gradient-to-r from-violet-600 to-violet-700 hover:from-violet-700 hover:to-violet-800 active:scale-98 text-white font-semibold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <Check className="w-4 h-4 stroke-[2.5]" />
-            <span>{isSaving ? 'Saving...' : 'Save Payment Records'}</span>
+            <span>
+              {isSaving
+                ? 'Saving...'
+                : round2(effectiveTotalDue) !== round2(computed.totalDue)
+                ? 'Save Due & Payments'
+                : 'Save Payment Records'}
+            </span>
           </button>
         </div>
       </div>
