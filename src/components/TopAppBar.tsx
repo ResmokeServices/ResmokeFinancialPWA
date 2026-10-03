@@ -36,7 +36,10 @@ export function TopAppBar({ onOpenAddModal }: TopAppBarProps) {
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Resmoke Financial
               </span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/60">
+              <span
+                suppressHydrationWarning
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/60"
+              >
                 <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
                 {metrics.urgencyCounts.settled}/{metrics.urgencyCounts.all} Settled
               </span>

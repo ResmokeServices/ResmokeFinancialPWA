@@ -28,34 +28,6 @@ import {
 const EXPENSES_STORAGE_KEY = 'resmoke_financial_pwa_expenses';
 const INCOMES_STORAGE_KEY = 'resmoke_financial_pwa_incomes';
 
-const getInitialExpenses = (): ExpenseDocument[] => {
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = localStorage.getItem(EXPENSES_STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch {
-      // Fallback
-    }
-  }
-  return INITIAL_EXPENSES;
-};
-
-const getInitialIncomes = (): Record<string, IncomeDocument> => {
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = localStorage.getItem(INCOMES_STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch {
-      // Fallback
-    }
-  }
-  return INITIAL_INCOMES;
-};
-
 const saveExpensesToLocalStorage = (expenses: ExpenseDocument[]) => {
   if (typeof window !== 'undefined') {
     try {
@@ -86,9 +58,9 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
   // Critical requirement: renderOrder kept intact as []
   renderOrder: [],
 
-  // Data Collections
-  expenses: getInitialExpenses(),
-  incomes: getInitialIncomes(),
+  // Data Collections - initialized consistently across SSR and initial Client render
+  expenses: INITIAL_EXPENSES,
+  incomes: INITIAL_INCOMES,
   isLoading: false,
   error: null,
   userId: 'user_demo_01',
@@ -108,6 +80,21 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
           set({ expenses: firestoreData, isLoading: false });
           saveExpensesToLocalStorage(firestoreData);
           return;
+        }
+      }
+      // Client-side fallback to localStorage (runs safely post-mount)
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem(EXPENSES_STORAGE_KEY);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              set({ expenses: parsed, isLoading: false });
+              return;
+            }
+          } catch {
+            // Ignore
+          }
         }
       }
       set({ isLoading: false });
@@ -298,6 +285,22 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
         if (Object.keys(firestoreIncomes).length > 0) {
           set({ incomes: firestoreIncomes });
           saveIncomesToLocalStorage(firestoreIncomes);
+          return;
+        }
+      }
+      // Client-side fallback to localStorage (runs safely post-mount)
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem(INCOMES_STORAGE_KEY);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed && typeof parsed === 'object') {
+              set((state) => ({ incomes: { ...state.incomes, ...parsed } }));
+              return;
+            }
+          } catch {
+            // Ignore
+          }
         }
       }
     } catch (err) {

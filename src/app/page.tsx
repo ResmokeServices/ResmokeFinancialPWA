@@ -77,7 +77,7 @@ export default function DashboardPage() {
         {/* Expense List Feed */}
         <section aria-label="Expense Feed" className="space-y-2.5">
           <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
-            <span className="uppercase tracking-wider">
+            <span suppressHydrationWarning className="uppercase tracking-wider">
               Expense Items ({filteredExpenses.length})
             </span>
             <span className="text-[11px] text-slate-400 font-normal">
