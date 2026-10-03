@@ -1,4 +1,4 @@
-import { ExpenseDocument } from '@/types/finance';
+import { ExpenseDocument, IncomeDocument } from '@/types/finance';
 
 export const INITIAL_EXPENSES: ExpenseDocument[] = [
   {
@@ -162,3 +162,19 @@ export const INITIAL_EXPENSES: ExpenseDocument[] = [
     updatedAt: '2026-10-01T22:54:32Z',
   },
 ];
+
+// Initial realistic 12-month Income Seed data
+export const INITIAL_INCOMES: Record<string, IncomeDocument> = {
+  '2026-01': { monthId: '2026-01', personalIncome: 32000, companyIncome: 45000 },
+  '2026-02': { monthId: '2026-02', personalIncome: 32000, companyIncome: 46500 },
+  '2026-03': { monthId: '2026-03', personalIncome: 34000, companyIncome: 48000 },
+  '2026-04': { monthId: '2026-04', personalIncome: 32000, companyIncome: 44000 },
+  '2026-05': { monthId: '2026-05', personalIncome: 35000, companyIncome: 51000 },
+  '2026-06': { monthId: '2026-06', personalIncome: 33000, companyIncome: 47500 },
+  '2026-07': { monthId: '2026-07', personalIncome: 35000, companyIncome: 53000 },
+  '2026-08': { monthId: '2026-08', personalIncome: 36000, companyIncome: 52000 },
+  '2026-09': { monthId: '2026-09', personalIncome: 35000, companyIncome: 49500 },
+  '2026-10': { monthId: '2026-10', personalIncome: 38000, companyIncome: 56000 },
+  '2026-11': { monthId: '2026-11', personalIncome: 37000, companyIncome: 54000 },
+  '2026-12': { monthId: '2026-12', personalIncome: 42000, companyIncome: 62000 },
+};

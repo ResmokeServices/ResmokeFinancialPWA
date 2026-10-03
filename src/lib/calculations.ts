@@ -1,6 +1,8 @@
 import {
   ComputedExpenseMonth,
   ExpenseDocument,
+  IncomeDocument,
+  MonthCashflowMetrics,
   MonthKpiMetrics,
   UrgencyStatus,
 } from '@/types/finance';
@@ -251,4 +253,76 @@ export function calculateMonthKpis(
     companyRatio,
     urgencyCounts,
   };
+}
+
+export const MONTH_LABELS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/**
+ * Combines 12 months of income and expenses into full-year Cashflow analytics records.
+ */
+export function build12MonthCashflow(
+  expenses: ExpenseDocument[],
+  incomes: Record<string, IncomeDocument>,
+  year: string = '2026'
+): MonthCashflowMetrics[] {
+  return MONTH_LABELS.map((label, idx) => {
+    const monthNum = (idx + 1).toString().padStart(2, '0');
+    const monthId = `${year}-${monthNum}`;
+
+    const inc = incomes[monthId] || {
+      monthId,
+      personalIncome: 0,
+      companyIncome: 0,
+    };
+
+    const personalIncome = round2(Number(inc.personalIncome) || 0);
+    const companyIncome = round2(Number(inc.companyIncome) || 0);
+    const totalInflow = round2(personalIncome + companyIncome);
+
+    // Sum expenses for this month
+    let totalExpenses = 0;
+    let settledPaid = 0;
+
+    expenses.forEach((exp) => {
+      const resolved = resolveMonthExpense(exp, monthId);
+      totalExpenses += resolved.totalDue;
+      settledPaid += resolved.settledPaid;
+    });
+
+    totalExpenses = round2(totalExpenses);
+    settledPaid = round2(settledPaid);
+
+    const netCashflow = round2(totalInflow - totalExpenses);
+    const freeMarginPercent =
+      totalInflow > 0 ? round2((netCashflow / totalInflow) * 100) : 0;
+    const burnRatePercent =
+      totalInflow > 0 ? round2((totalExpenses / totalInflow) * 100) : 0;
+
+    return {
+      monthId,
+      monthLabel: `${label} ${year}`,
+      personalIncome,
+      companyIncome,
+      totalInflow,
+      totalExpenses,
+      settledPaid,
+      netCashflow,
+      freeMarginPercent,
+      burnRatePercent,
+      isDeficit: netCashflow < 0,
+    };
+  });
 }

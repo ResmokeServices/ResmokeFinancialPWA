@@ -1,25 +1,36 @@
 import { create } from 'zustand';
 import {
+  CashflowKpiSummary,
   ExpenseDocument,
   FinanceAppState,
+  IncomeDocument,
+  MonthCashflowMetrics,
   PaymentEntry,
 } from '@/types/finance';
-import { INITIAL_EXPENSES } from '@/lib/mockData';
+import { INITIAL_EXPENSES, INITIAL_INCOMES } from '@/lib/mockData';
 import {
   db,
   hasFirebaseConfig,
   getFirestoreExpenses,
   saveFirestoreExpense,
   deleteFirestoreExpense,
+  getFirestoreIncomes,
+  saveFirestoreIncome,
 } from '@/lib/firebase';
-import { resolveMonthExpense, calculateMonthKpis } from '@/lib/calculations';
+import {
+  resolveMonthExpense,
+  calculateMonthKpis,
+  build12MonthCashflow,
+  round2,
+} from '@/lib/calculations';
 
-const LOCAL_STORAGE_KEY = 'resmoke_financial_pwa_expenses';
+const EXPENSES_STORAGE_KEY = 'resmoke_financial_pwa_expenses';
+const INCOMES_STORAGE_KEY = 'resmoke_financial_pwa_incomes';
 
 const getInitialExpenses = (): ExpenseDocument[] => {
   if (typeof window !== 'undefined') {
     try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      const saved = localStorage.getItem(EXPENSES_STORAGE_KEY);
       if (saved) {
         return JSON.parse(saved);
       }
@@ -30,10 +41,34 @@ const getInitialExpenses = (): ExpenseDocument[] => {
   return INITIAL_EXPENSES;
 };
 
-const saveToLocalStorage = (expenses: ExpenseDocument[]) => {
+const getInitialIncomes = (): Record<string, IncomeDocument> => {
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(expenses));
+      const saved = localStorage.getItem(INCOMES_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // Fallback
+    }
+  }
+  return INITIAL_INCOMES;
+};
+
+const saveExpensesToLocalStorage = (expenses: ExpenseDocument[]) => {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(EXPENSES_STORAGE_KEY, JSON.stringify(expenses));
+    } catch {
+      // Ignore
+    }
+  }
+};
+
+const saveIncomesToLocalStorage = (incomes: Record<string, IncomeDocument>) => {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(INCOMES_STORAGE_KEY, JSON.stringify(incomes));
     } catch {
       // Ignore
     }
@@ -52,6 +87,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
 
   // Data Collections
   expenses: getInitialExpenses(),
+  incomes: getInitialIncomes(),
   isLoading: false,
   error: null,
   userId: 'user_demo_01',
@@ -69,7 +105,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
         const firestoreData = await getFirestoreExpenses(userId);
         if (firestoreData.length > 0) {
           set({ expenses: firestoreData, isLoading: false });
-          saveToLocalStorage(firestoreData);
+          saveExpensesToLocalStorage(firestoreData);
           return;
         }
       }
@@ -88,7 +124,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
         : exp
     );
     set({ expenses: updated });
-    saveToLocalStorage(updated);
+    saveExpensesToLocalStorage(updated);
 
     const target = updated.find((exp) => exp.id === expenseId);
     if (target && hasFirebaseConfig) {
@@ -109,7 +145,6 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
     const target = expenses.find((exp) => exp.id === expenseId);
     if (!target) return;
 
-    // Filter out existing payments belonging to this specific month, and append new ones
     const otherMonthPayments = (target.payments || []).filter(
       (p) => !p.date.startsWith(monthKey)
     );
@@ -126,7 +161,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
     );
 
     set({ expenses: updated });
-    saveToLocalStorage(updated);
+    saveExpensesToLocalStorage(updated);
 
     const modified = updated.find((e) => e.id === expenseId);
     if (modified && hasFirebaseConfig) {
@@ -155,12 +190,10 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
     let updatedPayments: PaymentEntry[];
 
     if (computed.isPaid) {
-      // Unsettle: remove payments for this month
       updatedPayments = (target.payments || []).filter(
         (p) => !p.date.startsWith(monthKey)
       );
     } else {
-      // Settle: add payment covering remaining balance
       const settlementPayment: PaymentEntry = {
         id: `pay_${Date.now()}`,
         amount: computed.balanceDue > 0 ? computed.balanceDue : computed.totalDue,
@@ -184,7 +217,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
     );
 
     set({ expenses: updated });
-    saveToLocalStorage(updated);
+    saveExpensesToLocalStorage(updated);
 
     const updatedTarget = updated.find((e) => e.id === expenseId);
     if (updatedTarget && hasFirebaseConfig) {
@@ -200,7 +233,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
     const { expenses, userId } = get();
     const updated = expenses.filter((e) => e.id !== expenseId);
     set({ expenses: updated });
-    saveToLocalStorage(updated);
+    saveExpensesToLocalStorage(updated);
 
     if (hasFirebaseConfig) {
       try {
@@ -223,7 +256,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
 
     const updated = [newExpense, ...expenses];
     set({ expenses: updated });
-    saveToLocalStorage(updated);
+    saveExpensesToLocalStorage(updated);
 
     if (hasFirebaseConfig) {
       try {
@@ -233,14 +266,148 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
       }
     }
   },
+
+  // --- Phase 2: Income & Cashflow State Management ---
+  fetchIncome: async (userId: string) => {
+    try {
+      if (hasFirebaseConfig && db) {
+        const firestoreIncomes = await getFirestoreIncomes(userId);
+        if (Object.keys(firestoreIncomes).length > 0) {
+          set({ incomes: firestoreIncomes });
+          saveIncomesToLocalStorage(firestoreIncomes);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch income records:', err);
+    }
+  },
+
+  updateIncome: async (
+    monthId: string,
+    personalIncome: number,
+    companyIncome: number
+  ) => {
+    const { incomes, userId } = get();
+    const cleanPersonal = round2(Number(personalIncome) || 0);
+    const cleanCompany = round2(Number(companyIncome) || 0);
+
+    const updatedRecord: IncomeDocument = {
+      monthId,
+      personalIncome: cleanPersonal,
+      companyIncome: cleanCompany,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newIncomes = {
+      ...incomes,
+      [monthId]: updatedRecord,
+    };
+
+    set({ incomes: newIncomes });
+    saveIncomesToLocalStorage(newIncomes);
+
+    if (hasFirebaseConfig) {
+      try {
+        await saveFirestoreIncome(userId, updatedRecord);
+      } catch (e) {
+        console.error('Firestore save income error:', e);
+      }
+    }
+  },
 }));
 
+/**
+ * Custom Selector Hook: Expense KPI summary metrics for the selected month
+ */
 export function useMonthMetrics() {
   const expenses = useFinanceStore((state) => state.expenses);
   const selectedMonth = useFinanceStore((state) => state.selectedMonth);
   return calculateMonthKpis(expenses, selectedMonth);
 }
 
+/**
+ * Custom Selector Hook: Cashflow KPI Summary (Inflow, Outflow, Net, Burn Rate) for selected month
+ */
+export function useCurrentCashflowKpis(): CashflowKpiSummary {
+  const selectedMonth = useFinanceStore((state) => state.selectedMonth);
+  const incomes = useFinanceStore((state) => state.incomes);
+  const expenses = useFinanceStore((state) => state.expenses);
+
+  if (selectedMonth === 'ALL') {
+    // Aggregate full year for "ALL"
+    let totalInflow = 0;
+    let totalOutflow = 0;
+
+    Object.values(incomes).forEach((inc) => {
+      totalInflow += (inc.personalIncome || 0) + (inc.companyIncome || 0);
+    });
+
+    expenses.forEach((exp) => {
+      const resolved = resolveMonthExpense(exp, 'ALL');
+      totalOutflow += resolved.totalDue;
+    });
+
+    totalInflow = round2(totalInflow);
+    totalOutflow = round2(totalOutflow);
+    const netCashflow = round2(totalInflow - totalOutflow);
+    const incomeBurnRatePercent =
+      totalInflow > 0 ? round2((totalOutflow / totalInflow) * 100) : 0;
+
+    return {
+      monthlyInflow: totalInflow,
+      monthlyOutflow: totalOutflow,
+      netCashflow,
+      incomeBurnRatePercent,
+      isDeficit: netCashflow < 0,
+    };
+  }
+
+  const currentIncome = incomes[selectedMonth] || {
+    monthId: selectedMonth,
+    personalIncome: 0,
+    companyIncome: 0,
+  };
+
+  const monthlyInflow = round2(
+    (Number(currentIncome.personalIncome) || 0) +
+      (Number(currentIncome.companyIncome) || 0)
+  );
+
+  let monthlyOutflow = 0;
+  expenses.forEach((exp) => {
+    const resolved = resolveMonthExpense(exp, selectedMonth);
+    monthlyOutflow += resolved.totalDue;
+  });
+  monthlyOutflow = round2(monthlyOutflow);
+
+  const netCashflow = round2(monthlyInflow - monthlyOutflow);
+  const incomeBurnRatePercent =
+    monthlyInflow > 0 ? round2((monthlyOutflow / monthlyInflow) * 100) : 0;
+
+  return {
+    monthlyInflow,
+    monthlyOutflow,
+    netCashflow,
+    incomeBurnRatePercent,
+    isDeficit: netCashflow < 0,
+  };
+}
+
+/**
+ * Custom Selector Hook: 12-Month Inflow vs Outflow records for charts and tables
+ */
+export function use12MonthCashflow(): MonthCashflowMetrics[] {
+  const expenses = useFinanceStore((state) => state.expenses);
+  const incomes = useFinanceStore((state) => state.incomes);
+  const selectedMonth = useFinanceStore((state) => state.selectedMonth);
+
+  const year = selectedMonth !== 'ALL' ? selectedMonth.split('-')[0] : '2026';
+  return build12MonthCashflow(expenses, incomes, year);
+}
+
+/**
+ * Custom Selector Hook: Filtered & Sorted Expenses for the active view
+ */
 export function useFilteredExpenses() {
   const expenses = useFinanceStore((state) => state.expenses);
   const selectedMonth = useFinanceStore((state) => state.selectedMonth);

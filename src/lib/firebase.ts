@@ -8,7 +8,7 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import { ExpenseDocument } from '@/types/finance';
+import { ExpenseDocument, IncomeDocument } from '@/types/finance';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
@@ -77,4 +77,45 @@ export async function deleteFirestoreExpense(
   if (!db || !hasFirebaseConfig) return;
   const expenseRef = doc(db, 'users', userId, 'expenses', expenseId);
   await deleteDoc(expenseRef);
+}
+
+/**
+ * Fetch all monthly income records from Firestore subcollection: /users/{userId}/income
+ */
+export async function getFirestoreIncomes(
+  userId: string
+): Promise<Record<string, IncomeDocument>> {
+  if (!db || !hasFirebaseConfig) {
+    return {};
+  }
+  const incomeRef = collection(db, 'users', userId, 'income');
+  const snapshot = await getDocs(incomeRef);
+  const incomeMap: Record<string, IncomeDocument> = {};
+  snapshot.forEach((docSnap) => {
+    const data = docSnap.data() as IncomeDocument;
+    incomeMap[docSnap.id] = {
+      ...data,
+      monthId: docSnap.id,
+    };
+  });
+  return incomeMap;
+}
+
+/**
+ * Save or update monthly income record in Firestore: /users/{userId}/income/{monthId}
+ */
+export async function saveFirestoreIncome(
+  userId: string,
+  income: IncomeDocument
+): Promise<void> {
+  if (!db || !hasFirebaseConfig) return;
+  const incomeDocRef = doc(db, 'users', userId, 'income', income.monthId);
+  await setDoc(
+    incomeDocRef,
+    {
+      ...income,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 }

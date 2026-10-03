@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { TopAppBar } from '@/components/TopAppBar';
 import { HorizontalMonthScroller } from '@/components/HorizontalMonthScroller';
 import { KpiSummaryCards } from '@/components/KpiSummaryCards';
+import { FinancialAnalysisSection } from '@/components/FinancialAnalysisSection';
 import { ScopeTabs } from '@/components/ScopeTabs';
 import { UrgencyFilterChips } from '@/components/UrgencyFilterChips';
 import { ExpenseCard } from '@/components/ExpenseCard';
@@ -15,6 +16,7 @@ import { Sparkles, ReceiptText } from 'lucide-react';
 
 export default function DashboardPage() {
   const fetchExpenses = useFinanceStore((state) => state.fetchExpenses);
+  const fetchIncome = useFinanceStore((state) => state.fetchIncome);
   const userId = useFinanceStore((state) => state.userId);
   const filteredExpenses = useFilteredExpenses();
 
@@ -22,13 +24,14 @@ export default function DashboardPage() {
     useState<ExpenseDocument | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // Sync expenses on mount
+  // Sync expenses and income on mount
   useEffect(() => {
     fetchExpenses(userId);
-  }, [fetchExpenses, userId]);
+    fetchIncome(userId);
+  }, [fetchExpenses, fetchIncome, userId]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col pb-12">
+    <div className="min-h-screen bg-slate-50 flex flex-col pb-16">
       {/* 1. Sticky Top App Bar */}
       <TopAppBar onOpenAddModal={() => setIsAddModalOpen(true)} />
 
@@ -36,14 +39,20 @@ export default function DashboardPage() {
       <HorizontalMonthScroller />
 
       {/* 3. Main Dashboard Responsive Container */}
-      <main className="w-full max-w-4xl mx-auto px-3.5 sm:px-6 pt-4 space-y-4 sm:space-y-5 flex-1">
-        {/* KPI Summary Cards */}
-        <section aria-label="Monthly KPI Metrics">
+      <main className="w-full max-w-4xl mx-auto px-3.5 sm:px-6 pt-4 space-y-5 sm:space-y-6 flex-1">
+        {/* Expense KPI Summary Cards (Budget Ceiling, Settled Paid, Balance Due, Outlay Scope) */}
+        <section aria-label="Monthly Expense KPI Metrics">
           <KpiSummaryCards />
         </section>
 
+        {/* Phase 2: Financial Analysis & Cashflow Section (Inserted ABOVE Expense List Feed) */}
+        <FinancialAnalysisSection />
+
         {/* Scope Tabs & Urgency Filter Chips */}
         <section className="space-y-2.5">
+          <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
+            <span className="uppercase tracking-wider">Expense Filter Controls</span>
+          </div>
           <ScopeTabs />
           <UrgencyFilterChips />
         </section>
@@ -52,7 +61,7 @@ export default function DashboardPage() {
         <section aria-label="Expense Feed" className="space-y-2.5">
           <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
             <span className="uppercase tracking-wider">
-              Items ({filteredExpenses.length})
+              Expense Items ({filteredExpenses.length})
             </span>
             <span className="text-[11px] text-slate-400 font-normal">
               Tap checkbox to quick-settle • Tap card to edit payments

@@ -42,6 +42,13 @@ export interface ExpenseDocument {
   updatedAt?: string;
 }
 
+export interface IncomeDocument {
+  monthId: string; // e.g. "2026-01" to "2026-12"
+  personalIncome: number;
+  companyIncome: number;
+  updatedAt?: string;
+}
+
 export interface ComputedExpenseMonth {
   expense: ExpenseDocument;
   originalDue: number; // OD_m
@@ -73,6 +80,28 @@ export interface MonthKpiMetrics {
   };
 }
 
+export interface MonthCashflowMetrics {
+  monthId: string;
+  monthLabel: string;
+  personalIncome: number;
+  companyIncome: number;
+  totalInflow: number; // personalIncome + companyIncome
+  totalExpenses: number; // TD_m (Total Due)
+  settledPaid: number; // SP_m
+  netCashflow: number; // totalInflow - totalExpenses
+  freeMarginPercent: number; // (netCashflow / totalInflow) * 100
+  burnRatePercent: number; // (totalExpenses / totalInflow) * 100
+  isDeficit: boolean;
+}
+
+export interface CashflowKpiSummary {
+  monthlyInflow: number;
+  monthlyOutflow: number;
+  netCashflow: number;
+  incomeBurnRatePercent: number;
+  isDeficit: boolean;
+}
+
 export interface FinanceAppState {
   // Navigation & Filtering
   selectedMonth: string; // "2026-01" to "2026-12" or "ALL"
@@ -85,6 +114,7 @@ export interface FinanceAppState {
 
   // Data Collections
   expenses: ExpenseDocument[];
+  incomes: Record<string, IncomeDocument>;
   isLoading: boolean;
   error: string | null;
   userId: string;
@@ -96,11 +126,15 @@ export interface FinanceAppState {
   setUrgencyFilter: (filter: 'ALL' | 'overdue' | 'next_due' | 'future_due' | 'settled') => void;
   setUserId: (userId: string) => void;
 
-  // Async Sync Engine
+  // Async Sync Engine (Expenses)
   fetchExpenses: (userId: string) => Promise<void>;
   updateExpense: (expenseId: string, delta: Partial<ExpenseDocument>) => Promise<void>;
   savePaymentRecords: (expenseId: string, monthKey: string, payments: PaymentEntry[]) => Promise<void>;
   deleteExpense: (expenseId: string) => Promise<void>;
   toggleSettleExpense: (expenseId: string, monthKey: string) => Promise<void>;
   addExpense: (expense: Omit<ExpenseDocument, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+
+  // Async Sync Engine (Income & Cashflow)
+  fetchIncome: (userId: string) => Promise<void>;
+  updateIncome: (monthId: string, personalIncome: number, companyIncome: number) => Promise<void>;
 }
