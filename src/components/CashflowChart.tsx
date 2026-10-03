@@ -137,3 +137,5 @@ export function CashflowChart() {
     </div>
   );
 }
+
+export default CashflowChart;
