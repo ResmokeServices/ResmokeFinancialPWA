@@ -32,6 +32,20 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
+ * Safe helper to match a payment date against a target cycle (YYYY-MM).
+ * Handles null, undefined, timestamps, and forward-slash formatting safely.
+ */
+export function matchesCycle(dateVal: unknown, cycleKey: string): boolean {
+  if (!dateVal || !cycleKey) return false;
+  try {
+    const str = String(dateVal).trim().replace(/\//g, '-');
+    return str.startsWith(cycleKey);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Adjusts a base due date string into a target month (YYYY-MM).
  * Safely caps days to the maximum day of the target month (e.g. Feb 28/29, Apr 30).
  */
@@ -126,7 +140,7 @@ export function resolveMonthExpense(
       const totalDue = round2(originalDue + cycleCarryover);
 
       const monthPayments = (expense.payments || []).filter(
-        (p) => p.date && p.date.replace(/\//g, '-').startsWith(cycleKey)
+        (p) => p && matchesCycle(p.date, cycleKey)
       );
       let settledPaid = round2(
         monthPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
@@ -202,7 +216,7 @@ export function resolveMonthExpense(
 
     // 4. Aggregated Settled Paid (SP_m)
     const monthPayments = (expense.payments || []).filter(
-      (p) => p.date && p.date.replace(/\//g, '-').startsWith(cycleKey)
+      (p) => p && matchesCycle(p.date, cycleKey)
     );
     let settledPaid = round2(
       monthPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)

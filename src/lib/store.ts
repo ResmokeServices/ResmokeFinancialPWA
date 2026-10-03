@@ -24,6 +24,7 @@ import {
   build12MonthCashflow,
   round2,
   updateExpenseMonthlyDue,
+  matchesCycle,
 } from '@/lib/calculations';
 
 const EXPENSES_STORAGE_KEY = 'resmoke_financial_pwa_expenses';
@@ -135,7 +136,7 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
     if (!target) return;
 
     const otherMonthPayments = (target.payments || []).filter(
-      (p) => !p.date.startsWith(monthKey)
+      (p) => !matchesCycle(p?.date, monthKey)
     );
 
     const mergedPayments = [...otherMonthPayments, ...newMonthPayments];
@@ -163,9 +164,13 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
   },
 
   toggleSettleExpense: async (expenseId: string, monthKey: string) => {
-    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+    if (
+      typeof window !== 'undefined' &&
+      typeof navigator !== 'undefined' &&
+      'vibrate' in navigator
+    ) {
       try {
-        navigator.vibrate(30);
+        navigator.vibrate?.(30);
       } catch {
         // Safe fallback
       }
@@ -180,17 +185,22 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
 
     if (computed.isPaid) {
       updatedPayments = (target.payments || []).filter(
-        (p) => !p.date.startsWith(monthKey)
+        (p) => !matchesCycle(p?.date, monthKey)
       );
     } else {
+      const settlementDate =
+        monthKey === 'ALL'
+          ? new Date().toISOString().slice(0, 10)
+          : `${monthKey}-01`;
+
       const settlementPayment: PaymentEntry = {
         id: `pay_${Date.now()}`,
         amount: computed.balanceDue > 0 ? computed.balanceDue : computed.totalDue,
-        date: `${monthKey}-01`,
+        date: settlementDate,
         reference: 'Quick Settlement',
       };
       const existingWithoutMonth = (target.payments || []).filter(
-        (p) => !p.date.startsWith(monthKey)
+        (p) => !matchesCycle(p?.date, monthKey)
       );
       updatedPayments = [...existingWithoutMonth, settlementPayment];
     }
