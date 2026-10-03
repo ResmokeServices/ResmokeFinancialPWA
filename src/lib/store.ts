@@ -13,6 +13,7 @@ import {
   hasFirebaseConfig,
   getFirestoreExpenses,
   saveFirestoreExpense,
+  batchSaveFirestoreExpenses,
   deleteFirestoreExpense,
   getFirestoreIncomes,
   saveFirestoreIncome,
@@ -265,6 +266,28 @@ export const useFinanceStore = create<FinanceAppState>((set, get) => ({
         console.error('Firestore add expense error:', e);
       }
     }
+  },
+
+  batchAddExpenses: async (newExpenses: ExpenseDocument[]) => {
+    const { expenses, userId } = get();
+    // Deduplicate against existing expenses by name & reference to prevent double entry
+    const existingKeys = new Set(expenses.map((e) => `${e.name.toLowerCase()}_${e.reference.toLowerCase()}`));
+    const deduplicated = newExpenses.filter(
+      (e) => !existingKeys.has(`${e.name.toLowerCase()}_${e.reference.toLowerCase()}`)
+    );
+
+    const merged = [...deduplicated, ...expenses];
+    set({ expenses: merged });
+    saveExpensesToLocalStorage(merged);
+
+    if (hasFirebaseConfig) {
+      try {
+        await batchSaveFirestoreExpenses(userId, newExpenses);
+      } catch (e) {
+        console.error('Firestore batch save error:', e);
+      }
+    }
+    return newExpenses.length;
   },
 
   // --- Phase 2: Income & Cashflow State Management ---

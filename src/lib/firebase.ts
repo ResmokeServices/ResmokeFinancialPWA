@@ -6,6 +6,7 @@ import {
   getDocs,
   setDoc,
   deleteDoc,
+  writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
 import { ExpenseDocument, IncomeDocument } from '@/types/finance';
@@ -65,6 +66,41 @@ export async function saveFirestoreExpense(
     },
     { merge: true }
   );
+}
+
+/**
+ * Batch write multiple expenses in chunks to Firestore: /users/{userId}/expenses/{expenseId}
+ */
+export async function batchSaveFirestoreExpenses(
+  userId: string,
+  expenses: ExpenseDocument[]
+): Promise<number> {
+  if (!db || !hasFirebaseConfig || expenses.length === 0) return 0;
+
+  const CHUNK_SIZE = 400; // Well below Firestore's 500 operations per batch limit
+  let count = 0;
+
+  for (let i = 0; i < expenses.length; i += CHUNK_SIZE) {
+    const chunk = expenses.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+
+    chunk.forEach((exp) => {
+      const expRef = doc(db, 'users', userId, 'expenses', exp.id);
+      batch.set(
+        expRef,
+        {
+          ...exp,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+
+    await batch.commit();
+    count += chunk.length;
+  }
+
+  return count;
 }
 
 /**
