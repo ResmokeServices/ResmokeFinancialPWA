@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -56,6 +56,22 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
 
 export function CashflowChart() {
   const data = use12MonthCashflow();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="w-full bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs h-64 sm:h-72 flex items-center justify-center text-slate-400 text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
+          <span>Loading visual chart...</span>
+        </div>
+      </div>
+    );
+  }
 
   // Shorten month label for mobile X-Axis (e.g. "Jan 2026" -> "Jan")
   const formattedData = data.map((d) => ({

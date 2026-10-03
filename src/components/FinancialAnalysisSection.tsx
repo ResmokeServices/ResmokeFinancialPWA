@@ -1,29 +1,39 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { CashflowKpiCards } from '@/components/CashflowKpiCards';
-import { CashflowChart } from '@/components/CashflowChart';
 import { CashflowTable } from '@/components/CashflowTable';
 import { AdjustIncomeModal } from '@/components/AdjustIncomeModal';
 import { useFinanceStore } from '@/lib/store';
 import { MonthCashflowMetrics } from '@/types/finance';
-import { BarChart3, Table, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { BarChart3, Table, SlidersHorizontal } from 'lucide-react';
+
+// Dynamic import with ssr: false prevents Webpack runtime 'call' errors with charting libraries
+const CashflowChart = dynamic(
+  () => import('@/components/CashflowChart').then((mod) => mod.CashflowChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs h-64 sm:h-72 flex items-center justify-center text-slate-400 text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
+          <span>Loading visual chart...</span>
+        </div>
+      </div>
+    ),
+  }
+);
 
 export function FinancialAnalysisSection() {
   const selectedMonth = useFinanceStore((state) => state.selectedMonth);
-
-  // Tab state between visual chart and full table
   const [activeView, setActiveView] = useState<'chart' | 'table'>('chart');
-
-  // Modal state
   const [editingMonthId, setEditingMonthId] = useState<string | null>(null);
 
-  const currentMonthId =
-    selectedMonth === 'ALL' ? '2026-10' : selectedMonth;
+  const currentMonthId = selectedMonth === 'ALL' ? '2026-10' : selectedMonth;
 
   return (
     <section aria-label="Financial Analysis and Cashflow" className="space-y-3.5">
-      {/* Section Header with Quick Actions */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <div className="flex items-center gap-1.5">
@@ -40,7 +50,6 @@ export function FinancialAnalysisSection() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          {/* View Toggle (Chart vs Table) */}
           <div className="bg-slate-200/80 p-0.5 rounded-xl flex items-center">
             <button
               type="button"
@@ -68,7 +77,6 @@ export function FinancialAnalysisSection() {
             </button>
           </div>
 
-          {/* Adjust Income Button */}
           <button
             type="button"
             onClick={() => setEditingMonthId(currentMonthId)}
@@ -80,10 +88,8 @@ export function FinancialAnalysisSection() {
         </div>
       </div>
 
-      {/* A. Cashflow KPI Cards */}
       <CashflowKpiCards />
 
-      {/* B & C. Interactive Visualizations & Table */}
       {activeView === 'chart' ? (
         <CashflowChart />
       ) : (
@@ -94,7 +100,6 @@ export function FinancialAnalysisSection() {
         />
       )}
 
-      {/* D. Adjust Monthly Income Streams Modal */}
       {editingMonthId && (
         <AdjustIncomeModal
           monthId={editingMonthId}
