@@ -158,6 +158,12 @@ export function ExpenseCard({ computed, onOpenPaymentModal }: ExpenseCardProps) 
           Due: {formatCurrency(totalDue)}
         </div>
 
+        {computed.accumulatedCarryover > 0 && (
+          <div className="text-[10px] text-amber-600 font-semibold">
+            +{formatCurrency(computed.accumulatedCarryover)} c/o
+          </div>
+        )}
+
         {settledPaid > 0 && (
           <div className="text-[11px] text-emerald-600 font-medium">
             Paid: {formatCurrency(settledPaid)}

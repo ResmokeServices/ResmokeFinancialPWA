@@ -89,6 +89,8 @@ export function getUrgency(
 
 /**
  * Resolves mathematical values for a single expense in a specified month cycle.
+ * Dynamically chains unpaid balances from prior months forward into subsequent months
+ * (accumulated carryover), exactly matching standard multi-month reconciliation.
  */
 export function resolveMonthExpense(
   expense: ExpenseDocument,
@@ -97,30 +99,66 @@ export function resolveMonthExpense(
   const isAllMonths = !monthKey || monthKey === 'ALL';
 
   if (isAllMonths) {
-    const originalDue = round2(expense.monthlyDueConfig.base * 12);
-    const accumulatedCarryover = 0;
-    const totalDue = originalDue;
-
-    const settledPaid = round2(
-      (expense.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    // For 12M Full Year view: simulate Jan through Dec
+    let accumulatedCarryover = round2(
+      expense.monthlyDueConfig?.accumulated?.['2026-01'] || 0
     );
+    let totalAnnualOriginalDue = 0;
+    let totalAnnualPaid = 0;
+    let finalDecemberBalance = 0;
 
-    const balanceDue =
-      settledPaid >= totalDue && totalDue > 0
-        ? 0
-        : Math.max(0, round2(totalDue - settledPaid));
+    for (let m = 1; m <= 12; m++) {
+      const cycleKey = `2026-${m.toString().padStart(2, '0')}`;
+      const overrides = expense.monthlyDueConfig?.overrides || {};
+      const baseDue = Number(expense.monthlyDueConfig?.base) || 0;
+      const originalDue = round2(
+        overrides[cycleKey] !== undefined ? overrides[cycleKey] : baseDue
+      );
+      totalAnnualOriginalDue = round2(totalAnnualOriginalDue + originalDue);
 
-    const isPaid = settledPaid >= totalDue && totalDue > 0;
+      let cycleCarryover = accumulatedCarryover;
+      if (m > 1 && expense.monthlyDueConfig?.accumulated?.[cycleKey]) {
+        cycleCarryover = round2(
+          cycleCarryover + expense.monthlyDueConfig.accumulated[cycleKey]
+        );
+      }
+
+      const totalDue = round2(originalDue + cycleCarryover);
+
+      const monthPayments = (expense.payments || []).filter(
+        (p) => p.date && p.date.replace(/\//g, '-').startsWith(cycleKey)
+      );
+      let settledPaid = round2(
+        monthPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+      );
+      if ((!expense.payments || expense.payments.length === 0) && expense.basePaid) {
+        settledPaid = totalDue;
+      }
+      totalAnnualPaid = round2(totalAnnualPaid + settledPaid);
+
+      const isPaid = settledPaid >= totalDue && totalDue > 0;
+      const balanceDue = isPaid ? 0 : Math.max(0, round2(totalDue - settledPaid));
+      accumulatedCarryover = balanceDue;
+      if (m === 12) {
+        finalDecemberBalance = balanceDue;
+      }
+    }
+
+    const totalAnnualDue = totalAnnualOriginalDue;
+    const isPaid = totalAnnualPaid >= totalAnnualDue && totalAnnualDue > 0;
+    const balanceDue = finalDecemberBalance;
     const progressPercent =
-      totalDue > 0 ? Math.min(100, round2((settledPaid / totalDue) * 100)) : 100;
+      totalAnnualDue > 0
+        ? Math.min(100, round2((totalAnnualPaid / totalAnnualDue) * 100))
+        : 100;
 
     return {
       expense,
-      originalDue,
+      originalDue: totalAnnualDue,
       effectiveDueDate: expense.dueDate,
-      accumulatedCarryover,
-      totalDue,
-      settledPaid,
+      accumulatedCarryover: 0,
+      totalDue: totalAnnualDue,
+      settledPaid: totalAnnualPaid,
       balanceDue,
       isPaid,
       urgency: isPaid ? 'settled' : 'future_due',
@@ -128,64 +166,115 @@ export function resolveMonthExpense(
     };
   }
 
-  // 1. Original Due (OD_m): If overrides[m] !== undefined then overrides[m] else base
-  const overrides = expense.monthlyDueConfig?.overrides || {};
-  const accumulatedMap = expense.monthlyDueConfig?.accumulated || {};
-  const baseDue = Number(expense.monthlyDueConfig?.base) || 0;
+  // Monthly Cycle Resolution:
+  // Parse target year and target month number
+  const parts = monthKey.split('-');
+  const yearStr = parts[0] || '2026';
+  const targetMonthNum = Math.min(12, Math.max(1, parseInt(parts[1], 10) || 1));
 
+  // Initial opening carryover from prior period / sheet opening balance
+  let runningCarryover = round2(
+    expense.monthlyDueConfig?.accumulated?.['2026-01'] || 0
+  );
+
+  let targetComputed: ComputedExpenseMonth | null = null;
+
+  for (let m = 1; m <= targetMonthNum; m++) {
+    const cycleKey = `${yearStr}-${m.toString().padStart(2, '0')}`;
+
+    // 1. Original Due (OD_m): If overrides[m] !== undefined then overrides[m] else base
+    const overrides = expense.monthlyDueConfig?.overrides || {};
+    const baseDue = Number(expense.monthlyDueConfig?.base) || 0;
+    const originalDue = round2(
+      overrides[cycleKey] !== undefined ? overrides[cycleKey] : baseDue
+    );
+
+    // 2. Accumulated Carryover (AC_m) entering this month:
+    let cycleCarryover = runningCarryover;
+    if (m > 1 && expense.monthlyDueConfig?.accumulated?.[cycleKey]) {
+      cycleCarryover = round2(
+        cycleCarryover + expense.monthlyDueConfig.accumulated[cycleKey]
+      );
+    }
+
+    // 3. Effective Total Due (TD_m) = OD_m + AC_m
+    const totalDue = round2(originalDue + cycleCarryover);
+
+    // 4. Aggregated Settled Paid (SP_m)
+    const monthPayments = (expense.payments || []).filter(
+      (p) => p.date && p.date.replace(/\//g, '-').startsWith(cycleKey)
+    );
+    let settledPaid = round2(
+      monthPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    );
+
+    // Fallback for legacy migrated sheet records
+    if ((!expense.payments || expense.payments.length === 0) && expense.basePaid) {
+      settledPaid = totalDue;
+    }
+
+    // 5. Balance Due (BD_m) and Paid Status for this cycle
+    const isPaid = settledPaid >= totalDue && totalDue > 0;
+    const balanceDue = isPaid ? 0 : Math.max(0, round2(totalDue - settledPaid));
+
+    if (cycleKey === monthKey) {
+      const dateOverrides = expense.monthlyDueDateConfig?.overrides || {};
+      const baseDueDate =
+        expense.monthlyDueDateConfig?.base ||
+        expense.dueDate ||
+        `${yearStr}-10-01`;
+      const effectiveDueDate =
+        dateOverrides[cycleKey] !== undefined
+          ? dateOverrides[cycleKey]
+          : adjustDay(baseDueDate, cycleKey);
+
+      const urgency = getUrgency(effectiveDueDate, isPaid, cycleKey);
+      const progressPercent =
+        totalDue > 0
+          ? Math.min(100, round2((settledPaid / totalDue) * 100))
+          : 100;
+
+      targetComputed = {
+        expense,
+        originalDue,
+        effectiveDueDate,
+        accumulatedCarryover: cycleCarryover,
+        totalDue,
+        settledPaid,
+        balanceDue,
+        isPaid,
+        urgency,
+        progressPercent,
+      };
+      break;
+    }
+
+    // The unpaid amount carries forward into the next month!
+    runningCarryover = balanceDue;
+  }
+
+  if (targetComputed) {
+    return targetComputed;
+  }
+
+  // Fallback if month was outside 1..12
+  const overrides = expense.monthlyDueConfig?.overrides || {};
+  const baseDue = Number(expense.monthlyDueConfig?.base) || 0;
   const originalDue = round2(
     overrides[monthKey] !== undefined ? overrides[monthKey] : baseDue
   );
-
-  // 2. Due Date (DD_m): If dateOverrides[m] !== undefined then dateOverrides[m] else adjustDay(base, m)
-  const dateOverrides = expense.monthlyDueDateConfig?.overrides || {};
-  const baseDueDate = expense.monthlyDueDateConfig?.base || expense.dueDate || '2026-10-01';
-  const effectiveDueDate =
-    dateOverrides[monthKey] !== undefined
-      ? dateOverrides[monthKey]
-      : adjustDay(baseDueDate, monthKey);
-
-  // 3. Accumulated Carryover (AC_m): If accumulatedOverrides[m] !== undefined then accumulatedOverrides[m] else 0
-  const accumulatedCarryover = round2(
-    accumulatedMap[monthKey] !== undefined ? accumulatedMap[monthKey] : 0
-  );
-
-  // 2.2 Effective Total Due (TD_m) = OD_m + AC_m
-  const totalDue = round2(originalDue + accumulatedCarryover);
-
-  // 2.3 Aggregated Settled Paid (SP_m)
-  const monthPayments = (expense.payments || []).filter(
-    (p) => p.date && p.date.startsWith(monthKey)
-  );
-
-  let settledPaid = round2(
-    monthPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-  );
-
-  // Fallback for legacy migrated sheet records
-  if ((!expense.payments || expense.payments.length === 0) && expense.basePaid) {
-    settledPaid = totalDue;
-  }
-
-  // 2.4 Balance Due (BD_m) and Paid Status
-  const isPaid = settledPaid >= totalDue && totalDue > 0;
-  const balanceDue = isPaid ? 0 : Math.max(0, round2(totalDue - settledPaid));
-
-  const urgency = getUrgency(effectiveDueDate, isPaid, monthKey);
-  const progressPercent =
-    totalDue > 0 ? Math.min(100, round2((settledPaid / totalDue) * 100)) : 100;
-
+  const totalDue = round2(originalDue + runningCarryover);
   return {
     expense,
     originalDue,
-    effectiveDueDate,
-    accumulatedCarryover,
+    effectiveDueDate: expense.dueDate,
+    accumulatedCarryover: runningCarryover,
     totalDue,
-    settledPaid,
-    balanceDue,
-    isPaid,
-    urgency,
-    progressPercent,
+    settledPaid: 0,
+    balanceDue: totalDue,
+    isPaid: false,
+    urgency: 'overdue',
+    progressPercent: 0,
   };
 }
 
